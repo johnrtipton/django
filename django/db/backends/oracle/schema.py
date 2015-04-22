@@ -46,6 +46,27 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
                 END IF;
             END;
         /""" % {'sq_name': self.connection.ops._get_sequence_name(model._meta.db_table)})
+    
+    def alter_db_table(self, model, old_db_table, new_db_table):
+        # Run superclass action
+        super(DatabaseSchemaEditor, self).alter_db_table(model, old_db_table, new_db_table)
+        # If auto_field rename sequences and triggers
+        opts = model._meta
+        if opts.auto_field:
+            # Get auto column
+            auto_column = opts.auto_field.db_column or opts.auto_field.name
+            # Rename autoincrement sequence
+            self.execute('RENAME "%(old_sq_name)s" TO "%(new_sq_name)s";' % {
+                'old_sq_name': self.connection.ops._get_sequence_name(old_db_table),
+                'new_sq_name': self.connection.ops._get_sequence_name(new_db_table)
+            })
+            # Drop old trigger
+            self.execute('DROP TRIGGER "%(tr_name)s";' % {
+                'tr_name': self.connection.ops._get_trigger_name(old_db_table),
+            })
+            # Create new trigger
+            (sequence_sql, trigger_sql) = self.connection.ops.autoinc_sql(new_db_table, auto_column)
+            self.execute(trigger_sql)
 
     def alter_field(self, model, old_field, new_field, strict=False):
         try:
